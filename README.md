@@ -30,6 +30,7 @@ The rules are pure functions in [`app/heartbeat.py`](app/heartbeat.py), tested w
 | POST | `/threads/{id}/snooze` | `{"hours": n}` |
 | POST | `/threads/{id}/pause`, `/resume` | `{"until": "<ISO time with offset>"}` / clear |
 | GET | `/nudges` | what to say right now |
+| POST | `/nudges/send` | publish the current nudges to ntfy (503 if `ASSAEE_NTFY_URL` is unset, 502 if ntfy is unreachable) |
 
 Interactive docs at `/docs` while the server runs.
 
@@ -46,6 +47,8 @@ Or `docker compose up --build` (data in a named volume, bound to `127.0.0.1`).
 |---|---|---|
 | `ASSAEE_DB_URL` | `sqlite:///./assaee.db` | database (SQLite until the move to PostgreSQL in M3) |
 | `ASSAEE_TZ` | `Europe/Madrid` | timezone for active days and quiet hours |
+| `ASSAEE_NTFY_URL` | _(empty: delivery off)_ | base URL of the [ntfy](https://ntfy.sh) server (`http://ntfy` in compose) |
+| `ASSAEE_NTFY_TOPIC` | `assaee-nudges` | ntfy topic the phone subscribes to |
 | `ASSAEE_NUDGE_CAP` | `3` | most nudges per request |
 | `ASSAEE_QUIET_START` / `ASSAEE_QUIET_END` | `22` / `7` | local quiet hours |
 

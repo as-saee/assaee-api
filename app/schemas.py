@@ -81,6 +81,10 @@ class NudgeOut(BaseModel):
     message: str
 
 
+class SendOut(BaseModel):
+    sent: int
+
+
 class NudgesOut(BaseModel):
     nudges: list[NudgeOut]
     grouped: int

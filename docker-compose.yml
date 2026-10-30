@@ -5,8 +5,21 @@ services:
       - "127.0.0.1:8000:8000" # local only: the API has no authentication yet
     environment:
       ASSAEE_TZ: Europe/Madrid
+      ASSAEE_NTFY_URL: http://ntfy # compose network: reach the other service by its name
     volumes:
       - assaee-data:/data
 
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    command: serve
+    ports:
+      - "127.0.0.1:2586:80" # local only: no auth configured yet
+    environment:
+      NTFY_BASE_URL: http://localhost:2586
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+
 volumes:
   assaee-data:
+  ntfy-cache:

@@ -3,6 +3,9 @@ from zoneinfo import ZoneInfo
 
 DB_URL = os.environ.get("ASSAEE_DB_URL", "sqlite:///./assaee.db")
 TZ = ZoneInfo(os.environ.get("ASSAEE_TZ", "Europe/Madrid"))
+# Empty NTFY_URL means delivery is switched off.
+NTFY_URL = os.environ.get("ASSAEE_NTFY_URL", "")
+NTFY_TOPIC = os.environ.get("ASSAEE_NTFY_TOPIC", "assaee-nudges")
 NUDGE_CAP = int(os.environ.get("ASSAEE_NUDGE_CAP", "3"))
 # Local hours with no nudges: QUIET_START (inclusive) to QUIET_END (exclusive), wrapping midnight.
 QUIET_START = int(os.environ.get("ASSAEE_QUIET_START", "22"))

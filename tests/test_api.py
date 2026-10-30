@@ -6,10 +6,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import config
+from app import config, ntfy
 from app.db import Base, get_session
 from app.main import app
-from app.routes import get_now
+from app.routes import get_now, get_publisher
 
 START = datetime(2026, 10, 12, 10, 0, tzinfo=UTC)  # Monday 12:00 in Madrid
 
@@ -153,3 +153,59 @@ def test_no_nudges_in_quiet_hours_or_off_days(client, clock):
     assert len(client.get("/nudges").json()["nudges"]) == 1
     clock.advance(hours=10)  # 22:00 UTC = 00:00 Tuesday in Madrid: quiet hours
     assert client.get("/nudges").json()["nudges"] == []
+
+
+@pytest.fixture
+def sent():
+    """Replaces the real ntfy publisher with a recorder; nothing touches the network."""
+    messages = []
+    app.dependency_overrides[get_publisher] = lambda: (
+        lambda title, msg: messages.append((title, msg))
+    )
+    return messages
+
+
+def test_send_publishes_each_nudge(client, clock, sent, monkeypatch):
+    monkeypatch.setattr(config, "NTFY_URL", "http://ntfy")
+    t = make(client, "Book", kind="book")
+    client.post(f"/threads/{t['id']}/touch")
+    clock.advance(days=3)
+    r = client.post("/nudges/send")
+    assert r.status_code == 200 and r.json() == {"sent": 1}
+    assert sent == [("Book", "Book: last touched 3 days ago")]
+
+
+def test_send_adds_one_summary_for_the_rest(client, clock, sent, monkeypatch):
+    monkeypatch.setattr(config, "NTFY_URL", "http://ntfy")
+    monkeypatch.setattr(config, "NUDGE_CAP", 1)
+    for name in ("a", "b", "c"):
+        make(client, name, kind="book")
+    clock.advance(days=5)
+    assert client.post("/nudges/send").json() == {"sent": 2}
+    assert sent[1][0] == "More have gone quiet"
+
+
+def test_send_with_nothing_due_sends_nothing(client, sent, monkeypatch):
+    monkeypatch.setattr(config, "NTFY_URL", "http://ntfy")
+    make(client, "Book", kind="book")
+    assert client.post("/nudges/send").json() == {"sent": 0}
+    assert sent == []
+
+
+def test_send_is_off_without_a_ntfy_url(client, sent, monkeypatch):
+    monkeypatch.setattr(config, "NTFY_URL", "")
+    assert client.post("/nudges/send").status_code == 503
+    assert sent == []
+
+
+def test_send_reports_an_unreachable_ntfy(client, clock, monkeypatch):
+    monkeypatch.setattr(config, "NTFY_URL", "http://ntfy")
+
+    def down(title, msg):
+        raise ntfy.NtfyError("connection refused")
+
+    app.dependency_overrides[get_publisher] = lambda: down
+    make(client, "Book", kind="book")
+    clock.advance(days=5)
+    r = client.post("/nudges/send")
+    assert r.status_code == 502 and "connection refused" in r.json()["detail"]

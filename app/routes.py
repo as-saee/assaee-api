@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import config
+from app import config, ntfy
 from app.db import get_session
 from app.heartbeat import Status, ThreadState, evaluate, select_nudges, snooze_until
 from app.models import Thread, Touch
@@ -12,6 +12,7 @@ from app.schemas import (
     NudgeOut,
     NudgesOut,
     PauseRequest,
+    SendOut,
     SnoozeRequest,
     ThreadCreate,
     ThreadOut,
@@ -23,6 +24,10 @@ router = APIRouter()
 
 def get_now() -> datetime:
     return datetime.now(UTC)
+
+
+def get_publisher() -> ntfy.Publisher:
+    return ntfy.publish
 
 
 def _days(thread: Thread) -> frozenset[int]:
@@ -211,8 +216,7 @@ def resume_thread(
     return _out(thread, now)
 
 
-@router.get("/nudges", response_model=NudgesOut)
-def nudges(session: Session = Depends(get_session), now: datetime = Depends(get_now)):
+def _build_nudges(session: Session, now: datetime) -> NudgesOut:
     threads = session.scalars(select(Thread).where(Thread.deleted_at.is_(None))).all()
     chosen, rest = select_nudges([_status(t, now) for t in threads], config.NUDGE_CAP)
     items = [
@@ -230,3 +234,28 @@ def nudges(session: Session = Depends(get_session), now: datetime = Depends(get_
     if rest:
         summary = f"{len(rest)} more have gone quiet: " + ", ".join(s.name for s in rest)
     return NudgesOut(nudges=items, grouped=len(rest), summary=summary)
+
+
+@router.get("/nudges", response_model=NudgesOut)
+def nudges(session: Session = Depends(get_session), now: datetime = Depends(get_now)):
+    return _build_nudges(session, now)
+
+
+@router.post("/nudges/send", response_model=SendOut)
+def send_nudges(
+    session: Session = Depends(get_session),
+    now: datetime = Depends(get_now),
+    publisher: ntfy.Publisher = Depends(get_publisher),
+):
+    if not config.NTFY_URL:
+        raise HTTPException(503, "nudge delivery is off: ASSAEE_NTFY_URL is not set")
+    due = _build_nudges(session, now)
+    messages = [(n.name, n.message) for n in due.nudges]
+    if due.summary:
+        messages.append(("More have gone quiet", due.summary))
+    try:
+        for title, message in messages:
+            publisher(title, message)
+    except ntfy.NtfyError as exc:
+        raise HTTPException(502, f"could not reach ntfy: {exc}") from exc
+    return SendOut(sent=len(messages))
