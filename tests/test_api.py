@@ -171,3 +171,14 @@ def test_send_reports_an_unreachable_ntfy(client, clock, monkeypatch):
     clock.advance(days=5)
     r = client.post("/nudges/send")
     assert r.status_code == 502 and "connection refused" in r.json()["detail"]
+
+
+def test_touch_clears_the_backoff_built_up_by_snoozes(client, clock):
+    t = make(client, kind="book")
+    for _ in range(4):
+        client.post(f"/threads/{t['id']}/snooze", json={"hours": 1})  # threshold now 4.5x = 108h
+    clock.advance(hours=45)
+    assert client.get("/nudges").json()["nudges"] == []  # 1.9x is below 4.5x
+    client.post(f"/threads/{t['id']}/touch")
+    clock.advance(hours=48)
+    assert len(client.get("/nudges").json()["nudges"]) == 1  # back to 1.5x: 2.0x is quiet

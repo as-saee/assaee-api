@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from app.heartbeat import (
     ThreadState,
     effective_interval_hours,
@@ -132,3 +134,123 @@ def test_selection_caps_and_ranks_most_overdue_first():
     chosen, rest = select_nudges(statuses, cap=2)
     assert [s.name for s in chosen] == ["b", "c"]
     assert sorted(s.name for s in rest) == ["a", "d"]
+
+
+# ---- edges: the exact boundaries of each rule -------------------------------------------------
+
+
+def _old_thread_at(now: datetime) -> ThreadState:
+    return state(touches=(now - timedelta(days=10),))
+
+
+@pytest.mark.parametrize(
+    ("utc_time", "nudgeable"),
+    [
+        ((19, 59), True),  # 21:59 in Madrid: still allowed
+        ((20, 0), False),  # 22:00: quiet hours start (inclusive)
+        ((4, 59), False),  # 06:59: still quiet
+        ((5, 0), True),  # 07:00: quiet hours end (exclusive)
+    ],
+)
+def test_quiet_hours_boundaries(utc_time, nudgeable):
+    now = datetime(2026, 10, 12, *utc_time, tzinfo=UTC)
+    assert evaluate(_old_thread_at(now), now, TZ).nudgeable is nudgeable
+
+
+def test_quiet_hours_with_equal_start_and_end_means_never_quiet():
+    night = datetime(2026, 10, 12, 21, 30, tzinfo=UTC)  # 23:30 in Madrid
+    assert evaluate(_old_thread_at(night), night, TZ, quiet_hours=(5, 5)).nudgeable
+
+
+def test_quiet_hours_window_that_does_not_wrap_midnight():
+    thread = _old_thread_at(MON_NOON)
+    three_am = datetime(2026, 10, 12, 1, 0, tzinfo=UTC)  # 03:00 in Madrid, inside 01-05
+    five_am = datetime(2026, 10, 12, 3, 0, tzinfo=UTC)  # 05:00 in Madrid, window is exclusive
+    one_am = datetime(2026, 10, 11, 23, 0, tzinfo=UTC)  # 01:00 in Madrid, window is inclusive
+    midnight = datetime(2026, 10, 11, 22, 59, tzinfo=UTC)  # 00:59 in Madrid, just before it
+    assert not evaluate(thread, one_am, TZ, quiet_hours=(1, 5)).nudgeable
+    assert evaluate(thread, midnight, TZ, quiet_hours=(1, 5)).nudgeable
+    assert not evaluate(thread, three_am, TZ, quiet_hours=(1, 5)).nudgeable
+    assert evaluate(thread, five_am, TZ, quiet_hours=(1, 5)).nudgeable
+
+
+def test_quiet_starts_at_exactly_one_and_a_half_times_the_usual_gap():
+    def quiet_after(hours: float) -> bool:
+        touches = every(1, 8, MON_NOON - timedelta(hours=hours))  # usual gap: 24h
+        return evaluate(state(touches=touches), MON_NOON, TZ).quiet
+
+    assert not quiet_after(35.9)
+    assert quiet_after(36)
+
+
+def test_snooze_and_pause_that_end_exactly_now_are_over():
+    old = (MON_NOON - timedelta(days=10),)
+    assert evaluate(state(touches=old, snoozed_until=MON_NOON), MON_NOON, TZ).nudgeable
+    assert evaluate(state(touches=old, paused_until=MON_NOON), MON_NOON, TZ).nudgeable
+    later = MON_NOON + timedelta(seconds=1)
+    assert not evaluate(state(touches=old, snoozed_until=later), MON_NOON, TZ).nudgeable
+    assert not evaluate(state(touches=old, paused_until=later), MON_NOON, TZ).nudgeable
+
+
+@pytest.mark.parametrize(
+    ("ignored", "threshold_hours"),
+    [(0, 36), (1, 54), (2, 72), (3, 90), (4, 108), (5, 108), (50, 108)],  # 24h * 1.5 * (1 + n/2)
+)
+def test_backoff_steps_and_cap(ignored, threshold_hours):
+    def quiet_after(hours: float) -> bool:
+        touches = every(1, 8, MON_NOON - timedelta(hours=hours))
+        return evaluate(state(touches=touches, ignored_nudges=ignored), MON_NOON, TZ).quiet
+
+    assert not quiet_after(threshold_hours - 1)
+    assert quiet_after(threshold_hours)
+
+
+def test_only_the_eight_most_recent_gaps_define_the_rhythm():
+    last = MON_NOON - timedelta(days=1)
+    recent = every(2, 9, last)  # 8 gaps of 2 days
+    older = tuple(recent[-1] - timedelta(days=k) for k in range(1, 11))  # 10 gaps of 1 day
+    assert effective_interval_hours(state(touches=recent + older), TZ) == 48
+
+
+def test_full_trust_needs_five_gaps():
+    last = MON_NOON - timedelta(days=1)
+    four = every(2, 5, last)  # 4 gaps of 48h, book default 24h: 0.8 * 48 + 0.2 * 24
+    five = every(2, 6, last)
+    assert effective_interval_hours(state(touches=four), TZ) == pytest.approx(43.2)
+    assert effective_interval_hours(state(touches=five), TZ) == 48
+
+
+def test_days_are_local_days_not_utc_days():
+    gym = {"kind": "gym"}  # default 72h; one 24h gap gives 0.2 * 24 + 0.8 * 72 = 62.4
+    # 23:30 and 00:30 Madrid time: one hour apart but on adjacent local days
+    adjacent = (
+        datetime(2026, 10, 12, 21, 30, tzinfo=UTC),
+        datetime(2026, 10, 12, 22, 30, tzinfo=UTC),
+    )
+    assert effective_interval_hours(state(touches=adjacent, **gym), TZ) == pytest.approx(62.4)
+    # 00:30 and 23:30 Madrid time: different UTC days but the same local day, so no gap at all
+    same_day = (
+        datetime(2026, 10, 11, 22, 30, tzinfo=UTC),
+        datetime(2026, 10, 12, 21, 30, tzinfo=UTC),
+    )
+    assert effective_interval_hours(state(touches=same_day, **gym), TZ) == 72
+
+
+def test_clock_change_does_not_stretch_a_two_day_gap():
+    # Madrid clocks go back on 2026-10-25, so noon to noon across it is 49 real hours.
+    touches = (datetime(2026, 10, 24, 12, 0, tzinfo=TZ), datetime(2026, 10, 26, 12, 0, tzinfo=TZ))
+    interval = effective_interval_hours(state(kind="gym", touches=touches), TZ)
+    assert interval == pytest.approx(0.2 * 48 + 0.8 * 72)  # two local days = 48h, not 49h
+
+
+def test_selection_edges():
+    def status(name: str, days_ago: int, **kw):
+        touches = (MON_NOON - timedelta(days=days_ago),)
+        return evaluate(state(id=name, name=name, touches=touches, **kw), MON_NOON, TZ)
+
+    paused = status("paused", 30, paused_until=MON_NOON + timedelta(days=1))
+    a, b = status("a", 10), status("b", 10)  # a tie
+    chosen, rest = select_nudges([paused, a, b], cap=0)
+    assert chosen == [] and [s.name for s in rest] == ["a", "b"]  # paused is in neither list
+    chosen, rest = select_nudges([paused, a, b], cap=5)
+    assert [s.name for s in chosen] == ["a", "b"] and rest == []  # a tie keeps input order
