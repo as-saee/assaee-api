@@ -6,3 +6,6 @@ __pycache__/
 *.egg-info/
 *.db
 .env
+
+# private plain-English change log (kept local, never published)
+docs/PROGRESS.md
