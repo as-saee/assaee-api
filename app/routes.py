@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import config, ntfy
+from app.auth import require_key
 from app.db import get_session
 from app.heartbeat import Status, ThreadState, evaluate, select_nudges, snooze_until
 from app.models import Thread, Touch
@@ -19,7 +20,9 @@ from app.schemas import (
     ThreadUpdate,
 )
 
-router = APIRouter()
+# /health stays open so uptime checks and k8s probes work without the key; the rest is locked.
+public = APIRouter()
+router = APIRouter(dependencies=[Depends(require_key)])
 
 
 def get_now() -> datetime:
@@ -96,7 +99,7 @@ def _message(s: Status) -> str:
     return f"{s.name}: {when}"
 
 
-@router.get("/health")
+@public.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 

@@ -2,9 +2,10 @@ services:
   api:
     build: .
     ports:
-      - "127.0.0.1:8000:8000" # local only: the API has no authentication yet
+      - "127.0.0.1:8000:8000" # local only; every route but /health needs the key
     environment:
       ASSAEE_TZ: Europe/Madrid
+      ASSAEE_API_KEY: ${ASSAEE_API_KEY:?set ASSAEE_API_KEY (e.g. in a git-ignored .env file)}
       ASSAEE_NTFY_URL: http://ntfy # compose network: reach the other service by its name
     volumes:
       - assaee-data:/data

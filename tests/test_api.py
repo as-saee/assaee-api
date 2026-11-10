@@ -1,48 +1,10 @@
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import config, ntfy
-from app.db import Base, get_session
 from app.main import app
-from app.routes import get_now, get_publisher
-
-START = datetime(2026, 10, 12, 10, 0, tzinfo=UTC)  # Monday 12:00 in Madrid
-
-
-class Clock:
-    def __init__(self):
-        self.now = START
-
-    def advance(self, **kw):
-        self.now += timedelta(**kw)
-
-
-@pytest.fixture
-def clock():
-    return Clock()
-
-
-@pytest.fixture
-def client(clock):
-    engine = create_engine(
-        "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
-    )
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(engine, expire_on_commit=False)
-
-    def session():
-        with Session() as s:
-            yield s
-
-    app.dependency_overrides[get_session] = session
-    app.dependency_overrides[get_now] = lambda: clock.now
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+from app.routes import get_publisher
 
 
 def make(client, name="Book", **kw):

@@ -38,6 +38,7 @@ Interactive docs at `/docs` while the server runs.
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
+export ASSAEE_API_KEY=dev-key     # any value locally; use a long random one in production
 uvicorn app.main:app --reload     # data in ./assaee.db
 pytest -q && ruff check . && ruff format --check .
 ```
@@ -46,6 +47,7 @@ Or `docker compose up --build` (data in a named volume, bound to `127.0.0.1`).
 | Variable | Default | Meaning |
 |---|---|---|
 | `ASSAEE_DB_URL` | `sqlite:///./assaee.db` | database (SQLite until the move to PostgreSQL in M3) |
+| `ASSAEE_API_KEY` | _(required)_ | shared secret; send it as `Authorization: Bearer <key>` on every route except `/health`. The server refuses to start without it |
 | `ASSAEE_TZ` | `Europe/Madrid` | timezone for active days and quiet hours |
 | `ASSAEE_NTFY_URL` | _(empty: delivery off)_ | base URL of the [ntfy](https://ntfy.sh) server (`http://ntfy` in compose) |
 | `ASSAEE_NTFY_TOPIC` | `assaee-nudges` | ntfy topic the phone subscribes to |
@@ -53,5 +55,5 @@ Or `docker compose up --build` (data in a named volume, bound to `127.0.0.1`).
 | `ASSAEE_QUIET_START` / `ASSAEE_QUIET_END` | `22` / `7` | local quiet hours |
 
 ## Not built yet
-Push delivery (self-hosted ntfy with a "Done" action), the capture inbox, authentication, and the Postgres migration.
+Push delivery (self-hosted ntfy with a "Done" action), the capture inbox, per-user login (Keycloak, M4), and the Postgres migration.
 See the [roadmap](https://github.com/as-saee/assaee-docs/blob/main/docs/roadmap.md).
