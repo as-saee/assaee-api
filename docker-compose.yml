@@ -15,7 +15,7 @@ services:
     image: binwiederhier/ntfy:v2.11.0
     command: serve
     ports:
-      - "127.0.0.1:2586:80" # local only; users and tokens are required (default access: deny-all)
+      - "${ASSAEE_NTFY_BIND:-127.0.0.1}:2586:80" # local only unless ASSAEE_NTFY_BIND is set (e.g. to the Tailscale IP); users and tokens are required (default access: deny-all)
     environment:
       NTFY_BASE_URL: http://localhost:2586
       NTFY_CACHE_FILE: /var/cache/ntfy/cache.db

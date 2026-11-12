@@ -52,6 +52,7 @@ Or `docker compose up --build` (data in a named volume, bound to `127.0.0.1`).
 | `ASSAEE_NTFY_URL` | _(empty: delivery off)_ | base URL of the [ntfy](https://ntfy.sh) server (`http://ntfy` in compose) |
 | `ASSAEE_NTFY_TOKEN` | _(empty)_ | write-only ntfy access token; required because ntfy denies anonymous access |
 | `ASSAEE_NTFY_TOPIC` | `assaee-nudges` | ntfy topic the phone subscribes to |
+| `ASSAEE_NTFY_BIND` | `127.0.0.1` | address the ntfy port listens on (compose only). Set it to the host's Tailscale IP to reach ntfy from a phone on the tailnet |
 | `ASSAEE_NUDGE_CAP` | `3` | most nudges per request |
 | `ASSAEE_QUIET_START` / `ASSAEE_QUIET_END` | `22` / `7` | local quiet hours |
 
@@ -68,6 +69,17 @@ docker compose exec ntfy ntfy token add apipub    # prints tk_...; set it as ASS
 ```
 Subscribe in the ntfy app with the `phone` user. Verified against the real server: anonymous access, reading with
 the API token, and publishing as the phone are all refused (403).
+
+## Reaching ntfy from a phone
+ntfy listens on `127.0.0.1` by default, so only the host can reach it. To use a phone, put both devices on a
+[Tailscale](https://tailscale.com) tailnet and bind the port to the host's tailnet address only (never `0.0.0.0`):
+```bash
+printf '\nASSAEE_NTFY_BIND=%s\n' "$(tailscale ip -4)" >> .env   # leading \n: .env may lack a final newline
+docker compose up -d
+```
+In the ntfy app add the server `http://<tailnet IP>:2586` with the `phone` user and subscribe to `assaee-nudges`.
+Traffic is encrypted by Tailscale. Keep the phone's VPN on and exempt ntfy from Android battery limits.
+Verified end to end: a message published from the host appeared on an Android phone immediately.
 
 ## Not built yet
 Push delivery (self-hosted ntfy with a "Done" action), the capture inbox, per-user login (Keycloak, M4), and the Postgres migration.
