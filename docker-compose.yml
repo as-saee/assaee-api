@@ -7,6 +7,7 @@ services:
       ASSAEE_TZ: Europe/Madrid
       ASSAEE_API_KEY: ${ASSAEE_API_KEY:?set ASSAEE_API_KEY (e.g. in a git-ignored .env file)}
       ASSAEE_NTFY_URL: http://ntfy # compose network: reach the other service by its name
+      ASSAEE_NTFY_TOKEN: ${ASSAEE_NTFY_TOKEN:-} # write-only token; see the README to create it
     volumes:
       - assaee-data:/data
 
@@ -14,13 +15,17 @@ services:
     image: binwiederhier/ntfy:v2.11.0
     command: serve
     ports:
-      - "127.0.0.1:2586:80" # local only: no auth configured yet
+      - "127.0.0.1:2586:80" # local only; users and tokens are required (default access: deny-all)
     environment:
       NTFY_BASE_URL: http://localhost:2586
       NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_AUTH_FILE: /var/lib/ntfy/user.db
+      NTFY_AUTH_DEFAULT_ACCESS: deny-all
     volumes:
       - ntfy-cache:/var/cache/ntfy
+      - ntfy-auth:/var/lib/ntfy
 
 volumes:
   assaee-data:
   ntfy-cache:
+  ntfy-auth:

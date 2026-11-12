@@ -19,11 +19,11 @@ def publish(title: str, message: str) -> None:
     Unicode text; plain-header publishing would be limited to Latin-1.
     """
     payload = json.dumps({"topic": config.NTFY_TOPIC, "title": title, "message": message})
+    headers = {"Content-Type": "application/json"}
+    if config.NTFY_TOKEN:
+        headers["Authorization"] = f"Bearer {config.NTFY_TOKEN}"
     request = urllib.request.Request(
-        config.NTFY_URL,
-        data=payload.encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        config.NTFY_URL, data=payload.encode(), headers=headers, method="POST"
     )
     try:
         with urllib.request.urlopen(request, timeout=5):

@@ -50,9 +50,24 @@ Or `docker compose up --build` (data in a named volume, bound to `127.0.0.1`).
 | `ASSAEE_API_KEY` | _(required)_ | shared secret; send it as `Authorization: Bearer <key>` on every route except `/health`. The server refuses to start without it |
 | `ASSAEE_TZ` | `Europe/Madrid` | timezone for active days and quiet hours |
 | `ASSAEE_NTFY_URL` | _(empty: delivery off)_ | base URL of the [ntfy](https://ntfy.sh) server (`http://ntfy` in compose) |
+| `ASSAEE_NTFY_TOKEN` | _(empty)_ | write-only ntfy access token; required because ntfy denies anonymous access |
 | `ASSAEE_NTFY_TOPIC` | `assaee-nudges` | ntfy topic the phone subscribes to |
 | `ASSAEE_NUDGE_CAP` | `3` | most nudges per request |
 | `ASSAEE_QUIET_START` / `ASSAEE_QUIET_END` | `22` / `7` | local quiet hours |
+
+## Protecting ntfy
+ntfy runs with default access `deny-all`: nothing works until a user is allowed. Two identities, least privilege:
+the API may only **write** to the topic, the phone may only **read** it. Create them once after the first start
+(passwords are read from `NTFY_PASSWORD`, so they stay out of shell history):
+```bash
+NTFY_PASSWORD='<phone password>' docker compose exec -e NTFY_PASSWORD ntfy ntfy user add phone
+NTFY_PASSWORD='<api password>'   docker compose exec -e NTFY_PASSWORD ntfy ntfy user add apipub
+docker compose exec ntfy ntfy access phone  assaee-nudges read-only
+docker compose exec ntfy ntfy access apipub assaee-nudges write-only
+docker compose exec ntfy ntfy token add apipub    # prints tk_...; set it as ASSAEE_NTFY_TOKEN
+```
+Subscribe in the ntfy app with the `phone` user. Verified against the real server: anonymous access, reading with
+the API token, and publishing as the phone are all refused (403).
 
 ## Not built yet
 Push delivery (self-hosted ntfy with a "Done" action), the capture inbox, per-user login (Keycloak, M4), and the Postgres migration.
